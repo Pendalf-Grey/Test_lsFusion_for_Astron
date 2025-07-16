@@ -1,1 +1,17 @@
 MODULE Main;
+
+CLASS Stock 'Склад';
+
+name 'Наименование' = DATA STRING (Stock);
+address 'Адрес' = DATA STRING (Stock);
+
+FORM stocks 'Склады'
+    OBJECTS s = Stock
+    PROPERTIES (s) name, address, NEW, DELETE
+;
+
+NAVIGATOR {
+    NEW FOLDER masterData 'НСИ' FIRST WINDOW toolbar {
+        NEW stocks;
+    }
+}
