@@ -1,19 +1,8 @@
-// Приложение должно давать справку по материальным ресурсам компании, таким как:
-// 1) Склады, 
-// 2) Товары, 
-// 3) Связанные организации 
-//
-// Нужно выводить: 
-// 1) Приходную накладную, 
-// 2) Расходную накладную, 
-// 3) Остатки товаров на складе 
-
-
 MODULE Main;
 
 REQUIRE Time;
 
-// Перичень складов
+// Перечень складов
 CLASS Stock 'Склад';
 
 // Первичные свойства для склада
@@ -26,7 +15,7 @@ FORM stocks 'Склады'
     PROPERTIES (s) name, address, NEW, DELETE
 ;
 
-// Перичень товаров
+// Перечень товаров
 CLASS Item 'Товар';
 
 // Первичные свойства товаров
@@ -39,8 +28,8 @@ FORM items 'Товары'
     OBJECTS i = Item
     PROPERTIES (i) name, barcode, salePrice, NEW, DELETE
 ;
-    
-// Перичень организаций
+
+// Перечень организаций
 CLASS LegalEntity 'Организация';
 
 // Первичные свойства организации
@@ -52,7 +41,7 @@ inn 'ИНН' = DATA STRING (LegalEntity);
 legalEntity 'Организация' (STRING inn) = GROUP AGGR LegalEntity le BY inn(le);
 
 // Интерфейс организации
-FORM legalEntityes 'Организации'
+FORM legalEntities 'Организации'
     OBJECTS le = LegalEntity
     PROPERTIES (le) name, inn, NEW, DELETE
 ;
@@ -72,8 +61,6 @@ nameLegalEntity 'Организация' (Receipt r) = name(legalEntity(r));
 stock 'Склад' = DATA Stock (Receipt);
 nameStock 'Склад' (Receipt r) = name(stock(r));
 
-
-
 CLASS ReceiptLine 'Строка прихода';
 
 receipt 'Документ' = DATA Receipt (ReceiptLine) NONULL DELETE;
@@ -88,20 +75,19 @@ quantity 'Количество' = DATA NUMERIC[15,3] (ReceiptLine);
 FORM receipts 'Приходы'
     OBJECTS r = Receipt
     PROPERTIES (r) READONLY number, date, nameLegalEntity, nameStock
-    PROPERTIES (r) NEWSESSION NEW, EDIT, DELETE 
+    PROPERTIES (r) NEWSESSION NEW, EDIT, DELETE
 ;
 
 FORM receipt 'Приход'
-    OBJECTS r = Receipt PANEL 
-    PROPERTIES (r) number, nameLegalEntity, nameStock
-    
+    OBJECTS r = Receipt PANEL
+    PROPERTIES (r) number, date, nameLegalEntity, nameStock
+
     OBJECTS l = ReceiptLine
-    PROPERTIES (l) index, nameItem, quantity, NEW, DELETE 
-    
+    PROPERTIES (l) index, nameItem, quantity, NEW, DELETE
+    FILTERS receipt(l) = r
+
     EDIT Receipt OBJECT r
 ;
-
-
 
 CLASS Shipment 'Отгрузка';
 
@@ -110,21 +96,19 @@ date 'Дата' = DATA DATE (Shipment);
 
 // Локальное событие
 // Чтобы при открытии формы она уже была заполнена текущим числом
-WHEN LOCAL SET(Shipment r IS Shipment) DO date(r) <- DATE(currentDateTime());
+WHEN LOCAL SET(Shipment s IS Shipment) DO date(s) <- DATE(currentDateTime());
 
 legalEntity 'Организация' = DATA LegalEntity (Shipment);
-nameLegalEntity 'Организация' (Shipment r) = name(legalEntity(r));
+nameLegalEntity 'Организация' (Shipment s) = name(legalEntity(s));
 
 stock 'Склад' = DATA Stock (Shipment);
-nameStock 'Склад' (Shipment r) = name(stock(r));
-
-
+nameStock 'Склад' (Shipment s) = name(stock(s));
 
 CLASS ShipmentLine 'Строка отгрузки';
 
-receipt 'Документ' = DATA Receipt (ShipmentLine) NONULL DELETE;
+shipment 'Документ' = DATA Shipment (ShipmentLine) NONULL DELETE;
 
-index '№№' (ShipmentLine l) = PARTITION SUM 1 IF l IS ShipmentLine ORDER l BY receipt(l);
+index '№№' (ShipmentLine l) = PARTITION SUM 1 IF l IS ShipmentLine ORDER l BY shipment(l);
 
 item 'Товар' = DATA Item (ShipmentLine);
 nameItem 'Товар' (ShipmentLine l) = name(item(l));
@@ -132,19 +116,32 @@ nameItem 'Товар' (ShipmentLine l) = name(item(l));
 quantity 'Количество' = DATA NUMERIC[15,3] (ShipmentLine);
 
 FORM shipments 'Расходы'
-    OBJECTS r = Receipt
-    PROPERTIES (r) READONLY number, date, nameLegalEntity, nameStock
-    PROPERTIES (r) NEWSESSION NEW, EDIT, DELETE
+    OBJECTS s = Shipment
+    PROPERTIES (s) READONLY number, date, nameLegalEntity, nameStock
+    PROPERTIES (s) NEWSESSION NEW, EDIT, DELETE
 ;
 
 FORM shipment 'Расход'
-    OBJECTS r = Shipment PANEL
-    PROPERTIES (r) number, nameLegalEntity, nameStock
+    OBJECTS s = Shipment PANEL
+    PROPERTIES (s) number, date, nameLegalEntity, nameStock
 
     OBJECTS l = ShipmentLine
     PROPERTIES (l) index, nameItem, quantity, NEW, DELETE
+    FILTERS shipment(l) = s
 
-    EDIT Shipment OBJECT r
+    EDIT Shipment OBJECT s
+;
+
+inQuantity 'Приход' (Stock s, Item i) = GROUP SUM quantity(ReceiptLine rl) BY stock(receipt(rl)), item(rl);
+outQuantity 'Расход' (Stock s, Item i) = GROUP SUM quantity(ShipmentLine sl) BY stock(shipment(sl)), item(sl);
+
+balance 'Остаток' (Stock s, Item i) = inQuantity(s, i) (-) outQuantity(s, i);
+
+FORM balance 'Остатки'
+    OBJECTS (s = Stock, i = Item)
+    PROPERTIES READONLY name(s), name(i), balance(s, i)
+    ORDERS name(s), name(i)
+    FILTERS balance(s, i) > 0
 ;
 
 // Основное меню
@@ -153,10 +150,11 @@ NAVIGATOR {
     NEW FOLDER masterData 'НСИ' FIRST WINDOW toolbar {
         NEW stocks;
         NEW items;
-        NEW legalEntityes;
+        NEW legalEntities;
     }
-    NEW FOLDER documents 'Документы' AFTER masterData WINDOW toolbar{
+    NEW FOLDER documents 'Документы' AFTER masterData WINDOW toolbar {
         NEW receipts;
         NEW shipments;
     }
+    NEW balance AFTER documents;
 }
