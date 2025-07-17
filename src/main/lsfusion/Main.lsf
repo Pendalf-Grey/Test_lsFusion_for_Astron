@@ -1,17 +1,67 @@
+// Приложение должно давать справку по нашим материальным ресурсам, таким как:
+// 1) Склады, 
+// 2) Товары, 
+// 3) Связанные организации 
+//
+// Нужно выводить: 
+// 1) Приходную накладную, 
+// 2) Расходную накладную, 
+// 3) Остатки товаров на складе 
+
+
 MODULE Main;
 
+// Перичень складов
 CLASS Stock 'Склад';
 
+// Первичные свойства для склада
 name 'Наименование' = DATA STRING (Stock);
 address 'Адрес' = DATA STRING (Stock);
 
+// Интерфейс склада
 FORM stocks 'Склады'
     OBJECTS s = Stock
     PROPERTIES (s) name, address, NEW, DELETE
 ;
 
+// Перичень товаров
+CLASS Item 'Товар';
+
+// Первичные свойства товаров
+name 'Наименование' = DATA STRING[50] (Item);
+barcode 'Штрихкод' = DATA STRING[13] (Item);
+salePrice 'Цена продажи' = DATA NUMERIC[15,2] (Item);
+
+// Интерфейс товара
+FORM items 'Товары'
+    OBJECTS i = Item
+    PROPERTIES (i) name, barcode, salePrice, NEW, DELETE
+;
+    
+// Перичень организаций
+CLASS legalEntity 'Организация';
+
+// Первичные свойства организации
+name 'Наименование' = DATA STRING (legalEntity);
+inn 'ИНН' = DATA STRING (legalEntity);
+
+// Валидация по уникальному имени
+// Вторичное свойство
+legalEntity 'Организация' (STRING inn) = GROUP AGGR legalEntity le BY inn(le);
+
+// Интерфейс организации
+FORM legalEntityes 'Организации'
+    OBJECTS le = legalEntity
+    PROPERTIES (le) name, inn, NEW, DELETE
+;
+
+
+// Основное меню
 NAVIGATOR {
+    // Разделы
     NEW FOLDER masterData 'НСИ' FIRST WINDOW toolbar {
         NEW stocks;
+        NEW items;
+        NEW legalEntityes;
     }
 }
