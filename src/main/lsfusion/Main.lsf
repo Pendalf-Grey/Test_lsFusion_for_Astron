@@ -1,51 +1,53 @@
 MODULE Main;
 
+// Подкинем зависимость, чтобы работала локальное событие
 REQUIRE Time;
 
 // Перечень складов
 CLASS Stock 'Склад';
 
-// Первичные свойства для склада
 name 'Наименование' = DATA STRING (Stock);
 address 'Адрес' = DATA STRING (Stock);
 
-// Интерфейс склада
+// Интерфейс
 FORM stocks 'Склады'
     OBJECTS s = Stock
     PROPERTIES (s) name, address, NEW, DELETE
 ;
 
+
 // Перечень товаров
 CLASS Item 'Товар';
 
-// Первичные свойства товаров
 name 'Наименование' = DATA STRING[50] (Item);
 barcode 'Штрихкод' = DATA STRING[13] (Item);
 salePrice 'Цена продажи' = DATA NUMERIC[15,2] (Item);
 
-// Интерфейс товара
+// Интерфейс
 FORM items 'Товары'
     OBJECTS i = Item
     PROPERTIES (i) name, barcode, salePrice, NEW, DELETE
 ;
 
+
 // Перечень организаций
 CLASS LegalEntity 'Организация';
 
-// Первичные свойства организации
 name 'Наименование' = DATA STRING (LegalEntity);
 inn 'ИНН' = DATA STRING (LegalEntity);
 
-// Валидация по уникальному имени
+// Валидация по уникальному ИНН организации
 // Вторичное свойство
 legalEntity 'Организация' (STRING inn) = GROUP AGGR LegalEntity le BY inn(le);
 
-// Интерфейс организации
+// Интерфейс
 FORM legalEntities 'Организации'
     OBJECTS le = LegalEntity
     PROPERTIES (le) name, inn, NEW, DELETE
 ;
 
+
+// Документ прихода
 CLASS Receipt 'Приход';
 
 number 'Номер' = DATA INTEGER (Receipt);
@@ -56,18 +58,26 @@ date 'Дата' = DATA DATE (Receipt);
 WHEN LOCAL SET(Receipt r IS Receipt) DO date(r) <- DATE(currentDateTime());
 
 legalEntity 'Организация' = DATA LegalEntity (Receipt);
+// Представление для Оргранизации, чтобы разместить его на форме
 nameLegalEntity 'Организация' (Receipt r) = name(legalEntity(r));
 
 stock 'Склад' = DATA Stock (Receipt);
+// Представление для Склада, чтобы разместить его на форме
 nameStock 'Склад' (Receipt r) = name(stock(r));
+
 
 CLASS ReceiptLine 'Строка прихода';
 
+// Каждая строка документа должна иметь ссылку на документ, к которому она относится
+// Здесь NONULL DELETE - чтобы платформа вместе с удалением документа удалила все его строки, 
+// т.е. - чтобы не было ссылки на пустую строку
 receipt 'Документ' = DATA Receipt (ReceiptLine) NONULL DELETE;
 
+// Строки будут нумероваться автоматически в порядке добавления в базу
 index '№№' (ReceiptLine l) = PARTITION SUM 1 IF l IS ReceiptLine ORDER l BY receipt(l);
 
 item 'Товар' = DATA Item (ReceiptLine);
+// Представление для Товара, чтобы разместить его на форме
 nameItem 'Товар' (ReceiptLine l) = name(item(l));
 
 quantity 'Количество' = DATA NUMERIC[15,3] (ReceiptLine);
@@ -75,19 +85,24 @@ quantity 'Количество' = DATA NUMERIC[15,3] (ReceiptLine);
 FORM receipts 'Приходы'
     OBJECTS r = Receipt
     PROPERTIES (r) READONLY number, date, nameLegalEntity, nameStock
+    // Добавим NEW, EDIT, DELETE отдельно, чтобы на них не распространялось READONLY
     PROPERTIES (r) NEWSESSION NEW, EDIT, DELETE
 ;
 
 FORM receipt 'Приход'
+    // PANEL - значит, Объект будет размещён над строками, в шапке
     OBJECTS r = Receipt PANEL
     PROPERTIES (r) number, date, nameLegalEntity, nameStock
 
     OBJECTS l = ReceiptLine
     PROPERTIES (l) index, nameItem, quantity, NEW, DELETE
+    // Ограничим строки Прихода только строками текущего документа
     FILTERS receipt(l) = r
-
+    
+    // Объясняем платформе, что это вся эта форма предназначена для редактирования 
     EDIT Receipt OBJECT r
 ;
+
 
 CLASS Shipment 'Отгрузка';
 
@@ -99,10 +114,13 @@ date 'Дата' = DATA DATE (Shipment);
 WHEN LOCAL SET(Shipment s IS Shipment) DO date(s) <- DATE(currentDateTime());
 
 legalEntity 'Организация' = DATA LegalEntity (Shipment);
+// Представление для Организации, чтобы разместить его на форме
 nameLegalEntity 'Организация' (Shipment s) = name(legalEntity(s));
 
 stock 'Склад' = DATA Stock (Shipment);
+// Представление для Склада, чтобы разместить его на форме
 nameStock 'Склад' (Shipment s) = name(stock(s));
+
 
 CLASS ShipmentLine 'Строка отгрузки';
 
@@ -111,6 +129,7 @@ shipment 'Документ' = DATA Shipment (ShipmentLine) NONULL DELETE;
 index '№№' (ShipmentLine l) = PARTITION SUM 1 IF l IS ShipmentLine ORDER l BY shipment(l);
 
 item 'Товар' = DATA Item (ShipmentLine);
+// Представление для Товара, чтобы разместить его на форме
 nameItem 'Товар' (ShipmentLine l) = name(item(l));
 
 quantity 'Количество' = DATA NUMERIC[15,3] (ShipmentLine);
@@ -127,11 +146,14 @@ FORM shipment 'Расход'
 
     OBJECTS l = ShipmentLine
     PROPERTIES (l) index, nameItem, quantity, NEW, DELETE
+    // Ограничим строки Расхода только строками текущего документа
     FILTERS shipment(l) = s
 
     EDIT Shipment OBJECT s
 ;
 
+
+// Логика для определения Остатка на складах
 inQuantity 'Приход' (Stock s, Item i) = GROUP SUM quantity(ReceiptLine rl) BY stock(receipt(rl)), item(rl);
 outQuantity 'Расход' (Stock s, Item i) = GROUP SUM quantity(ShipmentLine sl) BY stock(shipment(sl)), item(sl);
 
@@ -140,7 +162,9 @@ balance 'Остаток' (Stock s, Item i) = inQuantity(s, i) (-) outQuantity(s,
 FORM balance 'Остатки'
     OBJECTS (s = Stock, i = Item)
     PROPERTIES READONLY name(s), name(i), balance(s, i)
+    // Cортировка сначала по наименованию Складов, потом - по наименованию Товаров
     ORDERS name(s), name(i)
+    // Фильтр для того, чтобы не показывались пары s-i по которым нет остатка
     FILTERS balance(s, i) > 0
 ;
 
